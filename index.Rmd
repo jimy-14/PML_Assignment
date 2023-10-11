@@ -1,0 +1,118 @@
+---
+title: "Activity Prediction Assignment"
+author: "Jamila Bano"
+date: "2023-10-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+This report will predict the manner an exercise was performed by building a machine learning model using the training and test datasets provided for assignment.Classe variable will be predicted. This report will include details on how model is built, how corss-validation is used,out of sample error and choices made.
+
+## Data Loading and Cleaning
+
+First load the libraries to be used. Then load  and read the training and test dataset and checking structure of data
+
+```{r }
+library(readr)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(corrplot)
+library(caret)
+url_train<- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test<- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url_train, destfile = "train_Data.csv")
+download.file(url_test, destfile = "test_Data.csv")
+dat_train = read.csv("train_Data.csv")
+dat_test = read.csv("test_Data.csv")
+```
+## EDA 
+```{r results='hide'}
+str(dat_train) 
+summary(dat_train)
+dim(dat_train)
+```
+
+Now checking variables with zero variance and removing from the data.
+
+```{r results='hide'}
+zero_index<-nearZeroVar(dat_train)
+copy_train<- dat_train
+new_train<-copy_train[,-nearZeroVar(copy_train)]
+
+```
+
+Checking for variables having more thhan 95% values missing and removing such columns.First 6 columns used for identification are also being removed.
+```{r results='hide'}
+col_check<- (colSums(is.na(new_train)) > 0.95*nrow(new_train)) #95% threshhold
+null_col<-which(col_check)
+new_train <- subset(new_train, select = -c(null_col))
+sub_new_train<- subset(new_train,select=c(7:59))
+
+```
+
+## Creating training and test data
+
+Data is further created  into partitions
+```{r results='hide'}
+inTrain<-createDataPartition(y=sub_new_train$classe,p=0.7,list = FALSE)
+training<- sub_new_train[inTrain,]
+testing<- sub_new_train[-inTrain,]
+```
+
+## Cross Validation
+cross validation is used within the training set. it is further split into training and test set to improve the model fit.
+
+## EDA Correlation
+Variables are checked for correlation having more than 95% corelation. Since these arre 12 variables out of 52 PCA will not be done to further reduce the number of predictors.
+```{r }
+M<- abs(cor(training[,-53]))
+diag(M)<- 0
+length(which(M>0.95,arr.ind = T))
+corrplot(cor(training[,-53]), method = 'square', order = 'FPC', type = 'lower', diag = FALSE)
+```
+
+## Model Selection
+Since this is a classification problem classification trees, random forest and Gradient boosting models will be run. Later accuracy will be checked the find the one giving best accuracy and that will be the selected model for prediction of final test set.
+Cross validation is done for each model with K = 3. fitControl is used as TrControl argument for cross-validation. 
+```{r results='hide'}
+fitControl <- trainControl(method='cv', number = 3)
+```
+## Decision Trees
+
+First model is decision trees
+
+```{r }
+mod_rpart<-train(classe~.,data=training,method='rpart',trControl=fitControl)
+plot(mod_rpart$finalModel,uniform = TRUE,main='Class tree')
+text(mod_rpart$finalModel,use.n = TRUE,all=TRUE,cex=0.8)
+pred_rpart<- predict(mod_rpart,testing)
+confusionMatrix(pred_rpart,as.factor(testing$classe))
+```
+
+## Random Forest
+```{r }
+mod_rf <- train(classe ~ ., data=training, method = "rf")
+mod_rf$finalModel
+pred_rf<- predict(mod_rf,testing)
+confusionMatrix(pred_rf,as.factor(testing$classe))
+```
+
+## Boost Model
+```{r }
+mod_boost<-train(classe ~ . ,trControl=fitControl,method="gbm", data=training,verbose=FALSE)
+pred_boost<- predict(mod_boost,testing)
+confusionMatrix(pred_boost,as.factor(testing$classe))
+```
+
+After checking the accuracy of all three models, Random forest model has the best accuracy 0.9947 and it will be selected as final model for prediction.
+
+## Original Test data Prediction
+```{r pressure, echo=FALSE}
+predict(mod_rf,dat_test)
+```
